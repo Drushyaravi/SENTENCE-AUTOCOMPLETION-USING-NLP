@@ -1,0 +1,145 @@
+#Import the necessary libraries
+import pandas as pd
+import numpy as np
+
+import tensorflow as tf
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.layers import Embedding,LSTM,Dense, Bidirectional
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+
+import nltk
+
+TEXT PRE-PROCESSING:
+data_dir = "../input/tweets-blogs-news-swiftkey-dataset-4million/final/en_US"
+file_path = data_dir + "/en_US.twitter.txt"
+
+## nltk settings
+nltk.data.path.append(data_dir)
+nltk.download('punkt')
+
+with open(file_path, "r") as f:
+    data = f.read()
+
+data = data[:500000]
+
+import re
+def remove_emojis_and_special_characters(text):
+    # Remove emojis
+    emoji_pattern = re.compile("["
+                               u"\U0001F600-\U0001F64F"  # emoticons
+                               u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                               u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                               u"\U0001F700-\U0001F77F"  # alchemical symbols
+                               u"\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+                               u"\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+                               u"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+                               u"\U0001FA00-\U0001FA6F"  # Chess Symbols
+                               u"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+                               u"\U00002702-\U000027B0"  # Dingbats
+                               u"\U000024C2-\U0001F251" 
+                               "]+", flags=re.UNICODE)
+    
+    # Remove special characters
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+  
+  # Remove extra spaces
+    text = re.sub(' +', ' ', text)
+    
+    return text
+
+def preprocess_pipeline(data) -> 'list':
+
+    # Split by newline character
+    sentences = data.split('\n')
+    for i  in range(len(sentences)):
+        sentences[i] = remove_emojis_and_special_characters(sentences[i])
+    # Remove leading and trailing spaces
+    sentences = [s.strip() for s in sentences]
+    # Drop Empty Sentences
+    sentences = [s for s in sentences if len(s) > 0]
+    # Empty List to hold Tokenized Sentences
+    tokenized = []
+    
+    # Iterate through sentences
+    for sentence in sentences:
+        
+        # Convert to lowercase
+        sentence = sentence.lower()
+        
+        # Convert to a list of words
+        
+        # Append to list
+        tokenized.append(sentence)
+
+        return tokenized
+
+tokenized_sentences = preprocess_pipeline(data)
+
+tokenizer = Tokenizer(oov_token='<oov>')
+tokenizer.fit_on_texts(tokenized_sentences)
+total_words = len(tokenizer.word_index) + 1
+
+print(len(tokenized_sentences))
+
+input_sequences = []
+for line in tokenized_sentences:
+    token_list = tokenizer.texts_to_sequences([line])[0]
+    for i in range(1,len(token_list)):
+        n_gram_sequence = token_list[:i+1]
+        input_sequences.append(n_gram_sequence)
+
+print(len(input_sequences))
+
+max_sequence_len = max([len(x) for x in input_sequences])
+input_sequences = np.array(pad_sequences(input_sequences, 
+                                         maxlen = max_sequence_len,
+                                        padding='pre'))
+len(input_sequences[1])
+
+X,labels = input_sequences[:,:-1],input_sequences[:,-1]
+ys = tf.keras.utils.to_categorical(labels, num_classes=total_words)
+
+model = Sequential()
+model.add(Embedding(total_words, 100, input_length=max_sequence_len-1))
+model.add(Bidirectional(LSTM(150)))
+model.add(Dense(total_words, activation='softmax'))
+adam = Adam(lr=0.01)
+model.compile(loss='categorical_crossentropy', optimizer=adam, metrics=['accuracy'])
+history = model.fit(X, ys, epochs=30, verbose=1)
+
+#print model.summary() 
+print(model)
+
+model.save('my_model1.keras')
+import matplotlib.pyplot as plt
+def plot_graphs(history,string):
+    plt.plot(history.history[string])
+    plt.xlabel("Epochs")
+    plt.ylabel(string)
+    plt.show()
+    
+plot_graphs(history, 'accuracy')
+
+plot_graphs(history, 'loss')
+
+seed_text = "i want to go"
+next_words = 1
+  
+for _ in range(next_words):
+    token_list = tokenizer.texts_to_sequences([seed_text])[0]
+    token_list = pad_sequences([token_list], maxlen=max_sequence_len-1, padding='pre')
+    predicted = model.predict(token_list, verbose=0)
+    predicted = np.argmax(predicted)
+    output_word = ""
+    for word, index in tokenizer.word_index.items():
+        if index == predicted:
+            output_word = word
+            break
+    seed_text += " " + output_word
+print(seed_text)
+
+
+##OBTAINED OUTPUT IS AS FOLLOWS:
+i want to go wrong
